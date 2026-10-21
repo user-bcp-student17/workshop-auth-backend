@@ -8,9 +8,20 @@ Backend Quarkus que autentica usuarios de laboratorio almacenados en SQLite y en
 
 Requisitos: JDK 21 y Maven 3.9+.
 
-```bash
+Antes de iniciar, define `AUTH_TOKEN_SECRET` con al menos 32 bytes aleatorios. En PowerShell, para una clave local efímera:
+
+```powershell
+$env:AUTH_TOKEN_SECRET = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 mvn quarkus:dev
 ```
+
+No guardes la clave en el repositorio. Para integrar con el verificador de tokens, configura el mismo secreto de forma segura y coordina la rotación entre servicios.
+
+Configuración relevante (sin valores reales):
+
+- `AUTH_TOKEN_SECRET`: obligatorio, al menos 32 bytes. No tiene valor por defecto.
+- `auth.client.default`: valor del claim `client` cuando la solicitud no lo envía (por defecto `angular-workshop`).
+- `auth.client.required`: `false` por defecto; `true` activa el modo estricto y exige `client` en `POST /auth/login`.
 
 Servicio: `http://localhost:8080`
 

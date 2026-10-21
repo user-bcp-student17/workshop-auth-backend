@@ -1,0 +1,406 @@
+[1mdiff --git a/README.md b/README.md[m
+[1mindex 72f8712..a92e5d5 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -8,10 +8,15 @@[m [mBackend Quarkus que autentica usuarios de laboratorio almacenados en SQLite y en[m
+ [m
+ Requisitos: JDK 21 y Maven 3.9+.[m
+ [m
+[31m-```bash[m
+[32m+[m[32mAntes de iniciar, define `AUTH_TOKEN_SECRET` con al menos 32 bytes aleatorios. En PowerShell, para una clave local efímera:[m
+[32m+[m
+[32m+[m[32m```powershell[m
+[32m+[m[32m$env:AUTH_TOKEN_SECRET = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))[m
+ mvn quarkus:dev[m
+ ```[m
+ [m
+[32m+[m[32mNo guardes la clave en el repositorio. Para integrar con el verificador de tokens, configura el mismo secreto de forma segura y coordina la rotación entre servicios.[m
+[32m+[m
+ Servicio: `http://localhost:8080`[m
+ [m
+ Credenciales locales:[m
+[1mdiff --git a/REGLAS.md b/REGLAS.md[m
+[1mindex d4a5e83..177efc3 100644[m
+[1m--- a/REGLAS.md[m
+[1m+++ b/REGLAS.md[m
+[36m@@ -1,17 +1,37 @@[m
+ # Contrato para agentes[m
+ [m
+[31m-1. Analiza el flujo completo antes de cambiar autenticación.[m
+[31m-2. Conserva el contrato de `POST /auth/login`.[m
+[31m-3. Crea pruebas de caracterización antes de refactorizar persistencia o token.[m
+[31m-4. No silencies CodeQL, Dependency Review ni JaCoCo.[m
+[32m+[m[32mÁmbito: trabaja únicamente en este repositorio `workshop-auth-backend/`.[m
+[32m+[m[32mEjecuta Git y guarda los artefactos dentro de él. Coordina dependencias con[m
+[32m+[m[32motros componentes sin leerlos ni modificarlos.[m
+[32m+[m
+[32m+[m[32m1. Analiza el flujo completo de autenticación antes de cambiarlo: request HTTP,[m
+[32m+[m[32m   validación en `AuthService`, consulta SQLite en `UserRepository`,[m
+[32m+[m[32m   verificación en `PasswordHasher`, emisión en `TokenService` y respuesta HTTP.[m
+[32m+[m[32m2. Conserva el contrato público de `POST /auth/login` y `GET /q/health`.[m
+[32m+[m[32m   Contrasta el comportamiento con [docs/ENDPOINTS.md](docs/ENDPOINTS.md) y[m
+[32m+[m[32m   actualiza esa documentación ante cambios acordados del contrato; no[m
+[32m+[m[32m   documentes como implementado un comportamiento que el código no ofrece.[m
+[32m+[m[32m3. Crea pruebas de caracterización antes de refactorizar persistencia,[m
+[32m+[m[32m   verificación de contraseñas o emisión de tokens. Cubre respuestas exitosas,[m
+[32m+[m[32m   errores y campos públicos del login, además de la migración de credenciales[m
+[32m+[m[32m   existentes si se modifica su almacenamiento.[m
+[32m+[m[32m4. No silencies ni reduzcas CodeQL, Dependency Review o JaCoCo. No excluyas[m
+[32m+[m[32m   código ni suprimas hallazgos para hacer pasar los controles. Valida los[m
+[32m+[m[32m   cambios de código con las pruebas pertinentes y `mvn -B verify` con JDK 21.[m
+ 5. No agregues secretos reales; usa variables de entorno y valores de prueba aislados.[m
+[31m-6. Separa API, servicio, repositorio y seguridad en cambios revisables.[m
+[31m-7. Meta de cobertura del código modificado: 85% o superior.[m
+[32m+[m[32m   No registres contraseñas, hashes, tokens ni secretos.[m
+[32m+[m[32m6. Separa API HTTP (`AuthResource`), negocio (`AuthService`), persistencia[m
+[32m+[m[32m   (`UserRepository`), seguridad (`PasswordHasher` y `TokenService`) y DTOs de[m
+[32m+[m[32m   entrada/salida en cambios revisables.[m
+[32m+[m[32m7. Meta de cobertura por líneas del código modificado: 85% o superior,[m
+[32m+[m[32m   comprobada mediante el reporte JaCoCo. No reduzcas la meta ni las pruebas[m
+[32m+[m[32m   existentes para cumplirla.[m
+ [m
+ ## Clean code[m
+ [m
+[31m-8. Cada método hace una sola cosa; si un método valida, accede a datos y arma[m
+[31m-   la respuesta a la vez (como `AuthResource.login` hoy), sepáralo en capas.[m
+[32m+[m[32m8. Cada método hace una sola cosa. La API adapta HTTP, el servicio coordina[m
+[32m+[m[32m   autenticación, el repositorio accede a datos y los componentes de seguridad[m
+[32m+[m[32m   verifican contraseñas o firman tokens. No mezcles esas responsabilidades.[m
+ 9. Nombres que expliquen el propósito, no el tipo (evitar `data`, `temp`,[m
+    `result2`, `handleStuff`).[m
+ 10. Sin duplicación: un bloque de código repetido en dos lugares se extrae a[m
+[1mdiff --git a/pom.xml b/pom.xml[m
+[1mindex 2da9177..bab82f9 100644[m
+[1m--- a/pom.xml[m
+[1m+++ b/pom.xml[m
+[36m@@ -49,6 +49,11 @@[m
+             <artifactId>commons-text</artifactId>[m
+             <version>1.9</version>[m
+         </dependency>[m
+[32m+[m[32m        <dependency>[m
+[32m+[m[32m            <groupId>com.nimbusds</groupId>[m
+[32m+[m[32m            <artifactId>nimbus-jose-jwt</artifactId>[m
+[32m+[m[32m            <version>10.10</version>[m
+[32m+[m[32m        </dependency>[m
+         <dependency>[m
+             <groupId>io.quarkus</groupId>[m
+             <artifactId>quarkus-junit5</artifactId>[m
+[1mdiff --git a/src/main/java/com/bcp/workshop/auth/AuthResource.java b/src/main/java/com/bcp/workshop/auth/AuthResource.java[m
+[1mindex 0d19cf9..6dbf868 100644[m
+[1m--- a/src/main/java/com/bcp/workshop/auth/AuthResource.java[m
+[1m+++ b/src/main/java/com/bcp/workshop/auth/AuthResource.java[m
+[36m@@ -7,55 +7,56 @@[m [mimport jakarta.ws.rs.Path;[m
+ import jakarta.ws.rs.Produces;[m
+ import jakarta.ws.rs.core.MediaType;[m
+ import jakarta.ws.rs.core.Response;[m
+[31m-import org.apache.commons.text.StringEscapeUtils;[m
+ [m
+[31m-import java.util.HashMap;[m
+ import java.util.Map;[m
+ [m
+ @Path("/auth")[m
+ @Consumes(MediaType.APPLICATION_JSON)[m
+ @Produces(MediaType.APPLICATION_JSON)[m
+ public class AuthResource {[m
+[32m+[m[32m    private static final String REQUEST_NULL_MESSAGE = "Request is null";[m
+[32m+[m[32m    private static final String USERNAME_REQUIRED_MESSAGE = "Username is required";[m
+[32m+[m[32m    private static final String PASSWORD_REQUIRED_MESSAGE = "Password is required";[m
+[32m+[m[32m    private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid user %s or password";[m
+[32m+[m
+[32m+[m[32m    private final AuthService authService;[m
+[32m+[m
+     @Inject[m
+[31m-    LegacyDatabase database;[m
+[32m+[m[32m    public AuthResource(AuthService authService) {[m
+[32m+[m[32m        this.authService = authService;[m
+[32m+[m[32m    }[m
+ [m
+     @POST[m
+     @Path("/login")[m
+     public Response login(LoginRequest request) {[m
+         try {[m
+[31m-            if (request == null) {[m
+[31m-                return Response.status(400).entity(Map.of("message", "Request is null")).build();[m
+[31m-            } else {[m
+[31m-                if (request.username == null || request.username.trim().isEmpty()) {[m
+[31m-                    return Response.status(400).entity(Map.of("message", "Username is required")).build();[m
+[31m-                } else {[m
+[31m-                    if (request.password == null || request.password.trim().isEmpty()) {[m
+[31m-                        return Response.status(400).entity(Map.of("message", "Password is required")).build();[m
+[31m-                    } else {[m
+[31m-                        UserRecord user = database.findByCredentials(request.username, request.password);[m
+[31m-                        if (user == null) {[m
+[31m-                            return Response.status(401).entity(Map.of("message", "Invalid user " + request.username + " or password")).build();[m
+[31m-                        } else {[m
+[31m-                            String token = LegacyTokenUtil.create(user.username(), user.role());[m
+[31m-                            Map<String, Object> response = new HashMap<>();[m
+[31m-                            response.put("token", token);[m
+[31m-                            response.put("expiresIn", 3600);[m
+[31m-                            response.put("user", Map.of([m
+[31m-                                    "username", user.username(),[m
+[31m-                                    "displayName", StringEscapeUtils.escapeHtml4(user.displayName()),[m
+[31m-                                    "role", user.role()[m
+[31m-                            ));[m
+[31m-                            response.put("debug", "authenticated-with-legacy-flow");[m
+[31m-                            return Response.ok(response).build();[m
+[31m-                        }[m
+[31m-                    }[m
+[31m-                }[m
+[31m-            }[m
+[32m+[m[32m            return toResponse(authService.login(request));[m
+         } catch (Exception error) {[m
+[31m-            return Response.status(500).entity(Map.of([m
+[31m-                    "message", error.getMessage() == null ? "Unknown error" : error.getMessage(),[m
+[31m-                    "exception", error.getClass().getName()[m
+[31m-            )).build();[m
+[32m+[m[32m            return internalServerError(error);[m
+         }[m
+     }[m
+[32m+[m
+[32m+[m[32m    private Response toResponse(AuthService.LoginResult result) {[m
+[32m+[m[32m        return switch (result.failure()) {[m
+[32m+[m[32m            case NONE -> Response.ok(LoginResponse.from(result)).build();[m
+[32m+[m[32m            case REQUEST_NULL -> error(Response.Status.BAD_REQUEST, REQUEST_NULL_MESSAGE);[m
+[32m+[m[32m            case USERNAME_REQUIRED -> error(Response.Status.BAD_REQUEST, USERNAME_REQUIRED_MESSAGE);[m
+[32m+[m[32m            case PASSWORD_REQUIRED -> error(Response.Status.BAD_REQUEST, PASSWORD_REQUIRED_MESSAGE);[m
+[32m+[m[32m            case INVALID_CREDENTIALS -> error([m
+[32m+[m[32m                    Response.Status.UNAUTHORIZED,[m
+[32m+[m[32m                    INVALID_CREDENTIALS_MESSAGE.formatted(result.username())[m
+[32m+[m[32m            );[m
+[32m+[m[32m        };[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    private Response error(Response.Status status, String message) {[m
+[32m+[m[32m        return Response.status(status).entity(Map.of("message", message)).build();[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    static Response internalServerError(Exception error) {[m
+[32m+[m[32m        return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity(Map.of([m
+[32m+[m[32m                "message", error.getMessage() == null ? "Unknown error" : error.getMessage(),[m
+[32m+[m[32m                "exception", error.getClass().getName()[m
+[32m+[m[32m        )).build();[m
+[32m+[m[32m    }[m
+ }[m
+[1mdiff --git a/src/main/java/com/bcp/workshop/auth/LegacyDatabase.java b/src/main/java/com/bcp/workshop/auth/LegacyDatabase.java[m
+[1mdeleted file mode 100644[m
+[1mindex 747ca6d..0000000[m
+[1m--- a/src/main/java/com/bcp/workshop/auth/LegacyDatabase.java[m
+[1m+++ /dev/null[m
+[36m@@ -1,44 +0,0 @@[m
+[31m-package com.bcp.workshop.auth;[m
+[31m-[m
+[31m-import jakarta.annotation.PostConstruct;[m
+[31m-import jakarta.enterprise.context.ApplicationScoped;[m
+[31m-[m
+[31m-import java.nio.file.Files;[m
+[31m-import java.nio.file.Path;[m
+[31m-import java.sql.Connection;[m
+[31m-import java.sql.DriverManager;[m
+[31m-import java.sql.ResultSet;[m
+[31m-import java.sql.Statement;[m
+[31m-[m
+[31m-@ApplicationScoped[m
+[31m-public class LegacyDatabase {[m
+[31m-    private static final String DB_URL = System.getenv().getOrDefault("AUTH_DB_URL", "jdbc:sqlite:./data/workshop.db");[m
+[31m-[m
+[31m-    @PostConstruct[m
+[31m-    void initialize() {[m
+[31m-        try {[m
+[31m-            Files.createDirectories(Path.of("data"));[m
+[31m-            try (Connection connection = DriverManager.getConnection(DB_URL); Statement statement = connection.createStatement()) {[m
+[31m-                statement.executeUpdate("CREATE TABLE IF NOT EXISTS legacy_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL)");[m
+[31m-                statement.executeUpdate("INSERT OR IGNORE INTO legacy_users(username,password,display_name,role) VALUES ('student','Workshop123!','Workshop Student','STUDENT')");[m
+[31m-                statement.executeUpdate("INSERT OR IGNORE INTO legacy_users(username,password,display_name,role) VALUES ('trainer','Trainer123!','Workshop Trainer','TRAINER')");[m
+[31m-            }[m
+[31m-        } catch (Exception error) {[m
+[31m-            error.printStackTrace();[m
+[31m-        }[m
+[31m-    }[m
+[31m-[m
+[31m-    public UserRecord findByCredentials(String username, String password) {[m
+[31m-        String sql = "SELECT id, username, display_name, role FROM legacy_users WHERE username='" + username + "' AND password='" + password + "'";[m
+[31m-        try (Connection connection = DriverManager.getConnection(DB_URL);[m
+[31m-             Statement statement = connection.createStatement();[m
+[31m-             ResultSet result = statement.executeQuery(sql)) {[m
+[31m-            if (result.next()) {[m
+[31m-                return new UserRecord(result.getLong("id"), result.getString("username"), result.getString("display_name"), result.getString("role"));[m
+[31m-            }[m
+[31m-        } catch (Exception error) {[m
+[31m-            error.printStackTrace();[m
+[31m-        }[m
+[31m-        return null;[m
+[31m-    }[m
+[31m-}[m
+[1mdiff --git a/src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java b/src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java[m
+[1mdeleted file mode 100644[m
+[1mindex 0854ea5..0000000[m
+[1m--- a/src/main/java/com/bcp/workshop/auth/LegacyTokenUtil.java[m
+[1m+++ /dev/null[m
+[36m@@ -1,17 +0,0 @@[m
+[31m-package com.bcp.workshop.auth;[m
+[31m-[m
+[31m-import java.nio.charset.StandardCharsets;[m
+[31m-import java.time.Instant;[m
+[31m-import java.util.Base64;[m
+[31m-[m
+[31m-public final class LegacyTokenUtil {[m
+[31m-    private static final String SECRET = "WORKSHOP_SECRET_2026";[m
+[31m-[m
+[31m-    private LegacyTokenUtil() {}[m
+[31m-[m
+[31m-    public static String create(String username, String role) {[m
+[31m-        long expiry = Instant.now().plusSeconds(3600).getEpochSecond();[m
+[31m-        String value = username + "|" + role + "|" + expiry + "|" + SECRET;[m
+[31m-        return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));[m
+[31m-    }[m
+[31m-}[m
+[1mdiff --git a/src/main/resources/application.properties b/src/main/resources/application.properties[m
+[1mindex fb9e87a..c9bb167 100644[m
+[1m--- a/src/main/resources/application.properties[m
+[1m+++ b/src/main/resources/application.properties[m
+[36m@@ -1,6 +1,7 @@[m
+ quarkus.http.port=8080[m
+ quarkus.http.host=127.0.0.1[m
+ %prod.quarkus.http.host=0.0.0.0[m
+[32m+[m[32mauth.token.secret=${AUTH_TOKEN_SECRET}[m
+ quarkus.http.cors.enabled=true[m
+ quarkus.http.cors.origins=/.*/[m
+ quarkus.http.cors.methods=GET,POST,PUT,DELETE,OPTIONS[m
+[1mdiff --git a/src/test/java/com/bcp/workshop/auth/AuthResourceTest.java b/src/test/java/com/bcp/workshop/auth/AuthResourceTest.java[m
+[1mindex ee958bc..bb30f0a 100644[m
+[1m--- a/src/test/java/com/bcp/workshop/auth/AuthResourceTest.java[m
+[1m+++ b/src/test/java/com/bcp/workshop/auth/AuthResourceTest.java[m
+[36m@@ -1,14 +1,26 @@[m
+ package com.bcp.workshop.auth;[m
+ [m
+[32m+[m[32mimport com.nimbusds.jose.JWSAlgorithm;[m
+[32m+[m[32mimport com.nimbusds.jose.crypto.MACVerifier;[m
+[32m+[m[32mimport com.nimbusds.jwt.SignedJWT;[m
+ import io.quarkus.test.junit.QuarkusTest;[m
+ import org.junit.jupiter.api.Test;[m
+ [m
+[32m+[m[32mimport java.nio.charset.StandardCharsets;[m
+[32m+[m
+ import static io.restassured.RestAssured.given;[m
+ import static org.hamcrest.CoreMatchers.is;[m
+ import static org.hamcrest.Matchers.notNullValue;[m
+[32m+[m[32mimport static org.junit.jupiter.api.Assertions.assertEquals;[m
+[32m+[m[32mimport static org.junit.jupiter.api.Assertions.assertFalse;[m
+[32m+[m[32mimport static org.junit.jupiter.api.Assertions.assertTrue;[m
+ [m
+ @QuarkusTest[m
+ class AuthResourceTest {[m
+[32m+[m[32m    private static final byte[] TEST_SIGNING_SECRET =[m
+[32m+[m[32m            "test-only-hs256-secret-32-bytes-long".getBytes(StandardCharsets.UTF_8);[m
+[32m+[m[32m    private static final long EXPECTED_TOKEN_TTL_SECONDS = 3600L;[m
+[32m+[m
+     @Test[m
+     void logsInWithWorkshopUser() {[m
+         given()[m
+[36m@@ -18,6 +30,106 @@[m [mclass AuthResourceTest {[m
+                 .then()[m
+                 .statusCode(200)[m
+                 .body("user.username", is("student"))[m
+[32m+[m[32m                .body("user.displayName", is("Workshop Student"))[m
+[32m+[m[32m                .body("user.role", is("STUDENT"))[m
+[32m+[m[32m                .body("expiresIn", is(3600))[m
+[32m+[m[32m                .body("debug", is("authenticated-with-legacy-flow"))[m
+                 .body("token", notNullValue());[m
+     }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void rejectsNullRequest() {[m
+[32m+[m[32m        given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("null")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(400)[m
+[32m+[m[32m                .body("message", is("Request is null"));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void rejectsMissingUsername() {[m
+[32m+[m[32m        given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"password\":\"wrong\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(400)[m
+[32m+[m[32m                .body("message", is("Username is required"));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void rejectsMissingPassword() {[m
+[32m+[m[32m        given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"username\":\"student\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(400)[m
+[32m+[m[32m                .body("message", is("Password is required"));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void rejectsInvalidCredentials() {[m
+[32m+[m[32m        given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"username\":\"student\",\"password\":\"wrong\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(401)[m
+[32m+[m[32m                .body("message", is("Invalid user student or password"));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void rejectsSqlInjectionCredentials() {[m
+[32m+[m[32m        given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"username\":\"' OR '1'='1' --\",\"password\":\"wrong\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(401);[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void returnsSignedTokenWithExplicitClaims() throws Exception {[m
+[32m+[m[32m        String token = given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"username\":\"student\",\"password\":\"Workshop123!\",\"client\":\"angular-workshop\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(200)[m
+[32m+[m[32m                .extract().path("token");[m
+[32m+[m
+[32m+[m[32m        SignedJWT signedToken = SignedJWT.parse(token);[m
+[32m+[m[32m        assertEquals(JWSAlgorithm.HS256, signedToken.getHeader().getAlgorithm());[m
+[32m+[m[32m        assertTrue(signedToken.verify(new MACVerifier(TEST_SIGNING_SECRET)));[m
+[32m+[m
+[32m+[m[32m        var claims = signedToken.getJWTClaimsSet();[m
+[32m+[m[32m        assertEquals("student", claims.getSubject());[m
+[32m+[m[32m        assertEquals("STUDENT", claims.getStringClaim("role"));[m
+[32m+[m[32m        assertEquals("angular-workshop", claims.getStringClaim("client"));[m
+[32m+[m[32m        assertEquals([m
+[32m+[m[32m                EXPECTED_TOKEN_TTL_SECONDS,[m
+[32m+[m[32m                (claims.getExpirationTime().getTime() - claims.getIssueTime().getTime()) / 1000[m
+[32m+[m[32m        );[m
+[32m+[m
+[32m+[m[32m        String[] segments = token.split("\\.", -1);[m
+[32m+[m[32m        String changedPayload = (segments[1].charAt(0) == 'A' ? "B" : "A") + segments[1].substring(1);[m
+[32m+[m[32m        assertFalse(SignedJWT.parse(segments[0] + "." + changedPayload + "." + segments[2])[m
+[32m+[m[32m                .verify(new MACVerifier(TEST_SIGNING_SECRET)));[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    @Test[m
+[32m+[m[32m    void keepsClientOptionalAndOmitsItsClaimWhenAbsent() throws Exception {[m
+[32m+[m[32m        String token = given()[m
+[32m+[m[32m                .contentType("application/json")[m
+[32m+[m[32m                .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")[m
+[32m+[m[32m                .when().post("/auth/login")[m
+[32m+[m[32m                .then()[m
+[32m+[m[32m                .statusCode(200)[m
+[32m+[m[32m                .extract().path("token");[m
+[32m+[m
+[32m+[m[32m        assertFalse(SignedJWT.parse(token).getJWTClaimsSet().getClaims().containsKey("client"));[m
+[32m+[m[32m    }[m
+ }[m
