@@ -121,7 +121,7 @@ class AuthResourceTest {
     }
 
     @Test
-    void keepsClientOptionalAndOmitsItsClaimWhenAbsent() throws Exception {
+    void usesDefaultClientAndClaimWhenAbsent() throws Exception {
         String token = given()
                 .contentType("application/json")
                 .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")
@@ -130,6 +130,26 @@ class AuthResourceTest {
                 .statusCode(200)
                 .extract().path("token");
 
-        assertFalse(SignedJWT.parse(token).getJWTClaimsSet().getClaims().containsKey("client"));
+        assertEquals("angular-workshop", SignedJWT.parse(token).getJWTClaimsSet().getStringClaim("client"));
+    }
+
+    @Test
+    void rejectsMalformedJsonWith400() {
+        given()
+                .contentType("application/json")
+                .body("{\"username\":")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(400);
+    }
+
+    @Test
+    void rejectsUnsupportedContentTypeWith415() {
+        given()
+                .contentType("text/plain")
+                .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(415);
     }
 }

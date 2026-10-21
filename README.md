@@ -17,6 +17,12 @@ mvn quarkus:dev
 
 No guardes la clave en el repositorio. Para integrar con el verificador de tokens, configura el mismo secreto de forma segura y coordina la rotación entre servicios.
 
+Configuración relevante (sin valores reales):
+
+- `AUTH_TOKEN_SECRET`: obligatorio, al menos 32 bytes. No tiene valor por defecto.
+- `auth.client.default`: valor del claim `client` cuando la solicitud no lo envía (por defecto `angular-workshop`).
+- `auth.client.required`: `false` por defecto; `true` activa el modo estricto y exige `client` en `POST /auth/login`.
+
 Servicio: `http://localhost:8080`
 
 Credenciales locales:

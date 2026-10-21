@@ -6,15 +6,26 @@ Define el comportamiento observable del JWT emitido por el login del backend de 
 
 ## ADDED Requirements
 
-### Requirement: Client is required at login
-El sistema SHALL exigir el campo `client` en el cuerpo de `POST /auth/login`. Un `client` ausente, `null`, vacío o compuesto solo por espacios SHALL devolver `400 Bad Request` con `message` igual a `Client is required`.
+### Requirement: Client falls back to a default during transition
+El sistema SHALL aceptar `POST /auth/login` sin el campo `client`. Un `client` ausente, `null` o compuesto solo por espacios SHALL sustituirse por el valor de `auth.client.default` (por defecto `angular-workshop`) y SHALL registrar un aviso que no contenga datos sensibles.
 
-#### Scenario: Login without client
+#### Scenario: Login without client uses the default
 - **WHEN** el cliente envía credenciales válidas sin el campo `client`
+- **THEN** el sistema responde `200 OK` con un `token` cuyo claim `client` es `angular-workshop`
+
+#### Scenario: Login with blank client uses the default
+- **WHEN** el cliente envía `client` como `"   "`
+- **THEN** el sistema responde `200 OK` con un `token` cuyo claim `client` es `angular-workshop`
+
+### Requirement: Strict mode requires client at login
+Cuando `auth.client.required` es `true`, el sistema SHALL exigir el campo `client` en el cuerpo de `POST /auth/login`. Un `client` ausente, `null`, vacío o compuesto solo por espacios SHALL devolver `400 Bad Request` con `message` igual a `Client is required` y SHALL NOT emitir token.
+
+#### Scenario: Strict mode without client
+- **WHEN** `auth.client.required` es `true` y el cliente envía credenciales válidas sin el campo `client`
 - **THEN** el sistema responde `400 Bad Request` con `{"message":"Client is required"}` y no emite token
 
-#### Scenario: Login with blank client
-- **WHEN** el cliente envía `client` como `"   "`
+#### Scenario: Strict mode with blank client
+- **WHEN** `auth.client.required` es `true` y el cliente envía `client` como `"   "`
 - **THEN** el sistema responde `400 Bad Request` con `{"message":"Client is required"}` y no emite token
 
 #### Scenario: Login with valid client
@@ -22,7 +33,7 @@ El sistema SHALL exigir el campo `client` en el cuerpo de `POST /auth/login`. Un
 - **THEN** el sistema responde `200 OK` con un `token`
 
 ### Requirement: Token contains minimal claims
-El JWT emitido en un login exitoso SHALL contener los claims `sub`, `client`, `iat` y `exp`. El claim `sub` SHALL ser el `username` autenticado y el claim `client` SHALL ser el valor enviado en la solicitud.
+El JWT emitido en un login exitoso SHALL contener los claims `sub`, `client`, `iat` y `exp`. El claim `sub` SHALL ser el `username` autenticado y el claim `client` SHALL ser el valor enviado en la solicitud o, si falta, `auth.client.default`.
 
 #### Scenario: Claims of a valid token
 - **WHEN** un usuario válido inicia sesión con `client` igual a `angular-workshop`
@@ -58,11 +69,15 @@ Un login con usuario inexistente o contraseña incorrecta SHALL responder `401 U
 - **THEN** el sistema responde `401 Unauthorized` sin `token`
 
 ### Requirement: Token signing secret is configured explicitly
-El sistema SHALL firmar los tokens con el valor de `AUTH_TOKEN_SECRET` de al menos 32 bytes. El secreto por defecto de laboratorio SHALL NOT usarse para firmar tokens fuera del modo laboratorio habilitado explícitamente.
+El sistema SHALL firmar los tokens únicamente con el valor de `AUTH_TOKEN_SECRET` de al menos 32 bytes. El código SHALL NOT contener un secreto por defecto; si `AUTH_TOKEN_SECRET` falta o tiene menos de 32 bytes, el arranque SHALL fallar.
 
-#### Scenario: Default secret outside lab mode
-- **WHEN** el servicio se ejecuta sin modo laboratorio y emite un token
-- **THEN** el token no verifica con el secreto por defecto de laboratorio
+#### Scenario: Missing secret stops startup
+- **WHEN** el servicio arranca sin `AUTH_TOKEN_SECRET`
+- **THEN** el arranque falla y no se emite ningún token
+
+#### Scenario: Short secret stops startup
+- **WHEN** el servicio arranca con `AUTH_TOKEN_SECRET` de menos de 32 bytes
+- **THEN** el arranque falla
 
 #### Scenario: Configured secret is used
 - **WHEN** `AUTH_TOKEN_SECRET` tiene un valor de al menos 32 bytes y el usuario inicia sesión

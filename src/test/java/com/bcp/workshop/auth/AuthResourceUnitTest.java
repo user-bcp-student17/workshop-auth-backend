@@ -39,6 +39,15 @@ class AuthResourceUnitTest {
     }
 
     @Test
+    void mapsMissingClientToContractualBadRequestInStrictMode() {
+        Response response = resourceWith(
+                AuthService.LoginResult.failure(AuthService.Failure.CLIENT_REQUIRED, null)
+        ).login(new LoginRequest());
+
+        assertMessage(response, Response.Status.BAD_REQUEST, "Client is required");
+    }
+
+    @Test
     void mapsInvalidCredentialsToContractualUnauthorizedResponse() {
         Response response = resourceWith(
                 AuthService.LoginResult.failure(AuthService.Failure.INVALID_CREDENTIALS, "student")

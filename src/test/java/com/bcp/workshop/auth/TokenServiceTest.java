@@ -1,11 +1,19 @@
 package com.bcp.workshop.auth;
 
 import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.MACVerifier;
+import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import com.nimbusds.jwt.proc.BadJWTException;
+import com.nimbusds.jwt.proc.DefaultJWTClaimsVerifier;
+import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -52,9 +60,45 @@ class TokenServiceTest {
     }
 
     @Test
-    void omitsOptionalClientClaimWhenAbsent() throws Exception {
-        SignedJWT token = SignedJWT.parse(new TokenService(TEST_SECRET).create("student", "STUDENT", null));
+    void alwaysIncludesClientClaim() throws Exception {
+        SignedJWT token = SignedJWT.parse(new TokenService(TEST_SECRET).create("student", "STUDENT", "angular-workshop"));
 
-        assertFalse(token.getJWTClaimsSet().getClaims().containsKey("client"));
+        assertEquals("angular-workshop", token.getJWTClaimsSet().getStringClaim("client"));
+    }
+
+    @Test
+    void rejectsMissingClientClaim() {
+        TokenService service = new TokenService(TEST_SECRET);
+
+        assertThrows(NullPointerException.class, () -> service.create("student", "STUDENT", null));
+    }
+
+    @Test
+    void expiresInMatchesExpMinusNowWithinFiveSeconds() throws Exception {
+        SignedJWT token = SignedJWT.parse(new TokenService(TEST_SECRET).create("student", "STUDENT", "angular-workshop"));
+        long remainingSeconds = (token.getJWTClaimsSet().getExpirationTime().getTime() - System.currentTimeMillis()) / 1000;
+
+        assertTrue(Math.abs(remainingSeconds - TokenService.EXPIRES_IN_SECONDS) <= 5);
+    }
+
+    @Test
+    void rejectsExpiredToken() throws Exception {
+        Instant past = Instant.now().minusSeconds(3600);
+        SignedJWT expired = new SignedJWT(
+                new JWSHeader(JWSAlgorithm.HS256),
+                new JWTClaimsSet.Builder()
+                        .subject("student")
+                        .claim("client", "angular-workshop")
+                        .issueTime(Date.from(past.minusSeconds(3600)))
+                        .expirationTime(Date.from(past))
+                        .build()
+        );
+        expired.sign(new MACSigner(TEST_SECRET.getBytes(StandardCharsets.UTF_8)));
+        SignedJWT parsed = SignedJWT.parse(expired.serialize());
+
+        assertTrue(parsed.verify(new MACVerifier(TEST_SECRET.getBytes(StandardCharsets.UTF_8))));
+        assertThrows(BadJWTException.class, () -> new DefaultJWTClaimsVerifier<SecurityContext>(
+                (JWTClaimsSet) null, (java.util.Set<String>) null
+        ).verify(parsed.getJWTClaimsSet(), null));
     }
 }

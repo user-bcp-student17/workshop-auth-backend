@@ -17,6 +17,7 @@ public class AuthResource {
     private static final String REQUEST_NULL_MESSAGE = "Request is null";
     private static final String USERNAME_REQUIRED_MESSAGE = "Username is required";
     private static final String PASSWORD_REQUIRED_MESSAGE = "Password is required";
+    private static final String CLIENT_REQUIRED_MESSAGE = "Client is required";
     private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid user %s or password";
 
     private final AuthService authService;
@@ -42,6 +43,7 @@ public class AuthResource {
             case REQUEST_NULL -> error(Response.Status.BAD_REQUEST, REQUEST_NULL_MESSAGE);
             case USERNAME_REQUIRED -> error(Response.Status.BAD_REQUEST, USERNAME_REQUIRED_MESSAGE);
             case PASSWORD_REQUIRED -> error(Response.Status.BAD_REQUEST, PASSWORD_REQUIRED_MESSAGE);
+            case CLIENT_REQUIRED -> error(Response.Status.BAD_REQUEST, CLIENT_REQUIRED_MESSAGE);
             case INVALID_CREDENTIALS -> error(
                     Response.Status.UNAUTHORIZED,
                     INVALID_CREDENTIALS_MESSAGE.formatted(result.username())

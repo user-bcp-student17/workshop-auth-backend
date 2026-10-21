@@ -13,6 +13,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Objects;
 
 @ApplicationScoped
 public class TokenService {
@@ -30,19 +31,19 @@ public class TokenService {
     }
 
     public String create(String username, String role, String client) {
+        Objects.requireNonNull(client, "client");
         Instant issuedAt = Instant.now();
-        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject(username)
                 .claim("role", role)
+                .claim("client", client)
                 .issueTime(Date.from(issuedAt))
-                .expirationTime(Date.from(issuedAt.plusSeconds(EXPIRES_IN_SECONDS)));
-        if (client != null) {
-            claims.claim("client", client);
-        }
+                .expirationTime(Date.from(issuedAt.plusSeconds(EXPIRES_IN_SECONDS)))
+                .build();
 
         SignedJWT token = new SignedJWT(
                 new JWSHeader(JWSAlgorithm.HS256),
-                claims.build()
+                claims
         );
         try {
             token.sign(new MACSigner(signingKey));

@@ -8,8 +8,9 @@ El contrato documentado en [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md) defin
 
 ## What Changes
 
-- `client` pasa a ser obligatorio en la solicitud de login: debe venir, no ser `null`, ni vacío ni solo espacios. **Cambio de contrato**: hoy una solicitud sin `client` es válida.
-- El JWT incluye siempre el claim `client` con el valor validado de la solicitud, junto a `sub`, `iat` y `exp`.
+- `client` se acepta opcional durante una fase de transición: si falta, es `null` o está en blanco, se usa `auth.client.default` (por defecto `angular-workshop`) y se registra un aviso sin datos sensibles. Así no cambia el contrato para los clientes actuales.
+- `auth.client.required=true` activa el modo estricto: `client` debe venir, no ser `null`, ni vacío ni solo espacios, y la respuesta es `400` con `Client is required`.
+- El JWT incluye siempre el claim `client` con el valor resuelto, junto a `sub`, `iat` y `exp`.
 - `expiresIn` debe coincidir con `exp - now` dentro de una tolerancia documentada de 5 segundos (supuesto a confirmar).
 - El secreto por defecto no se usa fuera del modo laboratorio, que debe activarse de forma explícita y documentada.
 - Ningún log contiene tokens, secretos ni contraseñas.
@@ -45,7 +46,7 @@ Según [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md), el cambio no altera:
 
 ## Preguntas abiertas
 
-- Mensaje exacto del error `400` por `client` (propuesto: `Client is required`).
+- Mensaje exacto del error `400` por `client` en modo estricto (propuesto: `Client is required`).
 - Forma de verificar la expiración: el backend no tiene un endpoint que consuma el token; la prueba de expiración usará un verificador con el mismo secreto.
 - Cómo se activa el modo laboratorio que permite el secreto por defecto.
 
@@ -54,4 +55,4 @@ Según [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md), el cambio no altera:
 - Código: `AuthResource`, `AuthService`, `TokenService`, `LoginRequest` y la configuración de `AUTH_TOKEN_SECRET` en `application.properties`.
 - Pruebas: `AuthResourceTest`, `AuthResourceUnitTest` y `TokenServiceTest`.
 - Documentación: [docs/ENDPOINTS.md](../../../docs/ENDPOINTS.md) debe actualizarse para reflejar `client` obligatorio.
-- Clientes del login: deben enviar `client` en cada solicitud.
+- Clientes del login: no requieren cambios en la fase de transición. Deben enviar `client` antes de activar `auth.client.required=true`.

@@ -18,7 +18,7 @@ No requiere autenticación previa. No envíes un header `Authorization`. El cuer
 |---|---|---:|---|
 | `username` | string | Sí | Nombre de usuario. No puede faltar ni ser vacío o solo espacios. |
 | `password` | string | Sí | Contraseña. No puede faltar ni ser vacía o solo espacios; se verifica exactamente como se envía. |
-| `client` | string o `null` | No | Identificador del cliente. No se valida. Si no es `null`, se incluye como claim `client` en el JWT; si se omite o es `null`, el claim no aparece. |
+| `client` | string o `null` | No* | Identificador del cliente. No se valida. Si falta, es `null` o solo contiene espacios, se usa `auth.client.default` (por defecto `angular-workshop`) y se registra un aviso sin datos sensibles. El claim `client` del JWT siempre está presente. *Con `auth.client.required=true` (modo estricto) pasa a ser obligatorio. |
 
 Ejemplo JSON completo:
 
@@ -70,6 +70,7 @@ La forma de la respuesta está definida en [LoginResponse.java](../src/main/java
 | `400 Bad Request` | El JSON es `null`. | `{"message":"Request is null"}` |
 | `400 Bad Request` | Falta `username`, es `null`, vacío o solo contiene espacios. | `{"message":"Username is required"}` |
 | `400 Bad Request` | Falta `password`, es `null`, vacío o solo contiene espacios. | `{"message":"Password is required"}` |
+| `400 Bad Request` | Modo estricto (`auth.client.required=true`) y falta `client`, es `null`, vacío o solo contiene espacios. No se emite token. | `{"message":"Client is required"}` |
 | `401 Unauthorized` | El usuario no existe o la contraseña no coincide. | `{"message":"Invalid user student or password"}` |
 | `400 Bad Request` | El cuerpo no se puede interpretar como JSON. El framework responde sin cuerpo. | *(cuerpo vacío)* |
 | `415 Unsupported Media Type` | El `Content-Type` no es compatible con JSON. El framework responde sin cuerpo. | *(cuerpo vacío)* |
@@ -79,10 +80,10 @@ Los cuerpos de `400` y `401` los construye [AuthResource.java](../src/main/java/
 
 ### 6. Notas de seguridad y preguntas abiertas
 
-- El JWT usa HS256, incluye `sub`, `role`, `iat` y `exp`, y expira realmente una hora después de su emisión. `client` es opcional y solo se añade cuando se envía un valor distinto de `null`. El secreto se configura con `AUTH_TOKEN_SECRET` y debe tener al menos 32 bytes. Véase [TokenService.java](../src/main/java/com/bcp/workshop/auth/TokenService.java#L19) y [application.properties](../src/main/resources/application.properties#L4).
+- El JWT usa HS256, incluye `sub`, `role`, `client`, `iat` y `exp`, y expira realmente una hora después de su emisión. El claim `client` siempre está presente: toma el valor enviado o, si falta, `auth.client.default`. El secreto se configura con `AUTH_TOKEN_SECRET` (sin valor por defecto) y debe tener al menos 32 bytes; si falta o es más corto, el arranque falla. Véase [TokenService.java](../src/main/java/com/bcp/workshop/auth/TokenService.java#L19) y [application.properties](../src/main/resources/application.properties).
 - El login no devuelve la contraseña ni su hash. Las cuentas de ejemplo son credenciales de laboratorio; no las uses en ambientes externos.
 - El error `500` expone el mensaje y la clase de la excepción. Los clientes no deberían mostrar esos detalles a usuarios finales.
-- **Pregunta abierta:** [HU-01.md](../HU-01.md) pide que el token tenga el claim `client`, pero la implementación permite omitirlo. ¿Debe `client` pasar a ser obligatorio en el contrato?
+- **Decisión de transición:** `client` no es obligatorio (`auth.client.required=false`) y usa `auth.client.default`. Pasar al modo estricto es un cambio de configuración, no de código.
 - **Pregunta abierta:** no se caracterizó el cuerpo de una solicitud vacía ni de JSON sintácticamente válido con tipos incompatibles; el recurso no define esos errores de deserialización.
 
 ## `GET /q/health`
