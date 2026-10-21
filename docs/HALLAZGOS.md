@@ -76,4 +76,4 @@ La solicitud incluye `client`, pero no se valida ni se incorpora al token. El to
 
 - `mvn -B verify` con JDK 21: `BUILD SUCCESS`; 31 pruebas, sin fallas ni errores. La cobertura JaCoCo por líneas es 85.2% en `UserRepository`, 93.75% en `PasswordHasher` y 100% en `AuthService`, cumpliendo la meta mínima de 85% de `REGLAS.md`.
 - Pendiente en CI: ejecutar CodeQL y Dependency Review; no se deshabilitaron ni se suprimieron sus hallazgos.
-- El contrato se consultó en `C:\Dia1\reqflow-workspace\workshop-auth-backend\docs\ENDPOINTS.md` por indicación del solicitante; la copia de `docs/ENDPOINTS.md` sigue ausente en este repositorio.
+- El contrato de `POST /auth/login` y `GET /q/health` está en [ENDPOINTS.md](ENDPOINTS.md) y se usó para caracterizar las respuestas.
